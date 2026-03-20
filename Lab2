@@ -1,0 +1,52 @@
+int8_t a, b, resultVal, statusReg; // define variables
+
+uint8_t getInput() {
+  while (Serial.available() == 0); //  wait for input
+  return (uint8_t)Serial.readStringUntil('\n').toInt(); // read number
+}
+
+void setup() {
+  Serial.begin(9600); // start serial
+}
+
+void loop() {
+
+  Serial.println("\nEnter first number (0-255):");  // ask first number
+  a = getInput(); // save to a
+
+  Serial.println("Enter second number (0-255):");  // ask second number
+  b = getInput(); // save to b
+
+  asm volatile (
+    "mov r18, %2     \n\t"   // move a to r18
+    "mov r19, %3     \n\t"   // move b to r19
+    "sub r18, r19    \n\t"   // r18 = r18 - r19
+    "mov %0, r18     \n\t"   // save result
+    "in  %1, __SREG__\n\t"   // read SREG
+    : "=r" (resultVal), "=r" (statusReg)  // outputs
+    : "r" (a), "r" (b) // inputs
+    : "r18", "r19" // used  registers
+  );
+
+  Serial.println("\n--- OUTPUT ---"); // output  title
+
+  Serial.print("Result: "); //  print result
+  Serial.println(resultVal);
+
+  Serial.print("SREG (BIN): ");  // print SREG
+  Serial.println(statusReg, BIN);
+
+  Serial.print("Zero Flag (Z): ");  // print Z flag
+  Serial.println((statusReg >> 1) & 1);
+
+  Serial.print("Carry Flag (C): ");  // print C flag
+  Serial.println(statusReg & 1);
+
+  Serial.print("A: ");   // print a
+  Serial.println(a);
+
+  Serial.print("B: ");   // print b
+  Serial.println(b);
+
+  delay(2000); // wait
+}
