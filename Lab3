@@ -1,0 +1,65 @@
+#include <Arduino.h>
+#include <avr/io.h>
+
+volatile uint8_t countVal = 0; // 8-bit counter variable 
+
+void setup() {
+  Serial.begin(9600);  // start serial communication
+
+  // Wait until EEPROM is not busy
+  while (EECR & (1 << EEPE)) {}
+
+  EEAR = 0x02;           // set EEPROM address
+  EECR |= (1 << EERE);   // enable EEPROM read
+  countVal = EEDR;       // load stored value into counter
+
+  Serial.println("Type S to save, R to reset");  // instructions
+}
+
+void loop() {
+
+                            // Assembly block to increment the counter
+  asm volatile(
+    "lds r20, countVal \n\t"  // load counter value into register r20
+    "inc r20           \n\t"  // increment value by 1
+    "sts countVal, r20 \n\t"  // store updated value back to memory
+    :
+    :
+    : "r20"                  // register used
+  );
+
+  Serial.print("Value = ");  // Print current counter value
+  Serial.println(countVal);
+
+  if (Serial.available() > 0) {     // Check if user sent a command
+    char cmd = Serial.read();  // read command
+
+    if (cmd == 'S' || cmd == 's') {   // If command is S or s  store value
+
+      while (EECR & (1 << EEPE)) {}  // wait until EEPROM ready
+
+      EEAR = 0x02;           // set EEPROM address
+      EEDR = countVal;       // put data to be written
+      EECR |= (1 << EEMPE);  // enable write mode
+      EECR |= (1 << EEPE);   // start writing
+
+      Serial.println("Saved to EEPROM");
+    }
+
+    else if (cmd == 'R' || cmd == 'r') {    // If command is R or r → reset value
+
+      countVal = 0;  // reset counter
+
+      while (EECR & (1 << EEPE)) {}  // wait until EEPROM ready
+
+      EEAR = 0x02;  // set address
+      EEDR = 0;     // write zero
+      EECR |= (1 << EEMPE);
+      EECR |= (1 << EEPE);
+
+      Serial.println("Value cleared and saved");
+    }
+  }
+
+  delay(1000);   // wait 1 second before next increment
+}
