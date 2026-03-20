@@ -1,0 +1,60 @@
+#include <avr/io.h>
+#include <avr/interrupt.h>
+
+volatile uint8_t timerTicks = 0;  // renamed variable
+
+     //External interrupt (button press)
+ISR(INT0_vect) {
+    if (timerTicks == 0) {  // only if not already running
+        PORTB |= (1 << 5);   // turn ON output (PB5)
+        timerTicks = 10;     //  start 10 ms countdown
+    }
+}
+
+ISR(TIMER1_COMPA_vect) //  Timer interrupt 
+{
+    PORTB ^= (1 << 0);   // toggle PB0 (debug signal)
+
+    if (timerTicks) {   // if countdown active
+        timerTicks--;    // decrease
+
+        if (!timerTicks) {   // if reaches zero
+            PORTB &= ~(1 << 5);   // turn OFF output
+        }
+    }
+}
+
+void setup(void)
+{
+    cli();   // disable interrupts during setup
+
+    DDRB |= (1 << 5);   // OUTPUT PIN (PB5) 
+    PORTB &= ~(1 << 5);
+
+    DDRB |= (1 << 0); // DEBUG PIN (PB0)
+
+    DDRD &= ~(1 << 2); //BUTTON INPUT (PD2 / INT0)
+    PORTD |= (1 << 2); // enable pull-up
+
+        //EXTERNAL INTERRUPT CONFIG 
+    EICRA = (EICRA & ~(1 << ISC00)) | (1 << ISC01);  // falling edge
+    EIMSK |= (1 << INT0);
+
+    // TIMER1 CONFIG
+    TCCR1A = 0x00;
+    TCCR1B = 0x00;
+
+    TCCR1B |= (1 << WGM12);  // CTC mode
+
+    OCR1A = 249; // 1 ms
+
+    TIMSK1 |= (1 << OCIE1A); // enable interrupt
+
+    TCCR1B |= (1 << CS11) | (1 << CS10);  // prescaler 64 (changed style)
+
+    sei();  // enable interrupts
+}
+
+void loop(void)
+{
+} // intentionally empty (all handled by interrupts)
