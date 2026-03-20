@@ -1,0 +1,182 @@
+#include <Arduino.h>          // Arduino functions
+#include <avr/io.h>           // AVR registers
+
+#define LED 13                // LED pin
+#define BTN 8                 // Button pin
+
+extern "C" void modeA();      // mode A function
+extern "C" void modeB();      // mode B function
+extern "C" void modeC();      // mode C function
+
+extern "C" void entryA();     // entry for mode A
+extern "C" void entryB();     // entry for mode B
+extern "C" void entryC();     // entry for mode C
+
+volatile uint8_t actIndex = 0; // current action index
+
+// -------- ACTIONS --------
+void act0() {
+  digitalWrite(LED, HIGH);   // LED ON
+  delay(150);                // wait
+  digitalWrite(LED, LOW);    // LED OFF
+  delay(150);                // wait
+}
+
+void act1() {
+  digitalWrite(LED, LOW);    // LED OFF
+  delay(150);                // wait
+  digitalWrite(LED, HIGH);   // LED ON
+  delay(150);                // wait
+}
+
+void act2() {
+  digitalWrite(LED, HIGH);   // LED ON
+  delay(80);                 // short ON
+  digitalWrite(LED, LOW);    // LED OFF
+  delay(500);                // long OFF
+}
+
+void act3() {
+  actIndex = 0;              // reset action
+}
+
+// -------- TABLE --------
+void (*actTable[4])() = {act0, act1, act2, act3}; // function table
+
+// -------- IJMP DISPATCH --------
+void runAct() {
+  void (*fn)() = actTable[actIndex]; // select function
+
+  asm volatile(
+    "movw r30, %A0\n\t"  // load address to Z register
+    "ijmp\n\t"           // jump to function
+    :
+    : "r"(fn)
+    : "r30", "r31"
+  );
+}
+
+// -------- RJMP WAIT --------
+void waitStart() {
+  asm volatile(
+    "wait_loop:\n\t"             // label
+    "sbic %[port],0\n\t"        // check button
+    "rjmp wait_loop\n\t"        // loop if not pressed
+    :
+    : [port] "I" (_SFR_IO_ADDR(PINB))
+  );
+}
+
+// -------- MODE SELECT --------
+uint8_t selectMode() {
+
+  uint8_t cnt = 0;                  // press counter
+  unsigned long t0 = millis();      // start time
+
+  while (millis() - t0 < 2000) {    // 2 second window
+
+    if (!digitalRead(BTN)) {        // if button pressed
+
+      cnt++;                        // increase count
+
+      while (!digitalRead(BTN));    // wait release
+      delay(40);                    // debounce
+    }
+  }
+
+  if (cnt < 1) cnt = 1;             // minimum 1
+  if (cnt > 3) cnt = 3;             // maximum 3
+
+  return cnt;                       // return mode
+}
+
+// -------- MODE A --------
+extern "C" void modeA() {
+
+  while (1) {                       // infinite loop
+
+    if (!digitalRead(BTN)) {        // button press
+
+      actIndex++;                  // next action
+      if (actIndex > 3) actIndex = 0; // reset if overflow
+
+      while (!digitalRead(BTN));   // wait release
+      delay(40);                   // debounce
+    }
+
+    runAct();                      // run selected action
+  }
+}
+
+// -------- MODE B --------
+extern "C" void modeB() {
+
+  while (1) {
+
+    if (!digitalRead(BTN)) {
+
+      actIndex++;
+      if (actIndex > 3) actIndex = 0;
+
+      while (!digitalRead(BTN));
+      delay(40);
+    }
+
+    runAct();                      // first action
+    runAct();                      // second action (double blink)
+    delay(350);                    // pause
+  }
+}
+
+// -------- MODE C --------
+extern "C" void modeC() {
+
+  while (1) {
+    digitalWrite(LED, HIGH);       // LED ON
+    delay(30);                     // short delay
+    digitalWrite(LED, LOW);        // LED OFF
+    delay(30);                     // short delay
+  }
+}
+
+// -------- SETUP --------
+void setup() {
+
+  pinMode(LED, OUTPUT);            // set LED output
+  pinMode(BTN, INPUT_PULLUP);      // button input with pull-up
+
+  waitStart();                     // wait for first press
+
+  digitalWrite(LED, HIGH);         // confirmation ON
+  delay(200);                      // wait
+  digitalWrite(LED, LOW);          // confirmation OFF
+
+  uint8_t m = selectMode();        // choose mode
+
+  if (m == 1) {
+    asm volatile("jmp entryA");    // jump to mode A
+  }
+  else if (m == 2) {
+    asm volatile("jmp entryB");    // jump to mode B
+  }
+  else {
+    asm volatile("jmp entryC");    // jump to mode C
+  }
+
+  while (1);                       // safety loop
+}
+
+// -------- ENTRY POINTS --------
+extern "C" __attribute__((used)) void entryA() {
+  modeA();                         // start mode A
+}
+
+extern "C" __attribute__((used)) void entryB() {
+  modeB();                         // start mode B
+}
+
+extern "C" __attribute__((used)) void entryC() {
+  modeC();                         // start mode C
+}
+
+void loop() {}                     // not used
