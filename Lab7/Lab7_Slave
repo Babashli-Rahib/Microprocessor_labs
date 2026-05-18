@@ -1,0 +1,34 @@
+#include <avr/io.h>
+#include <Arduino.h>
+
+void SPI_SlaveInit() {
+    // Set MISO(PB4) as Output for Slave response 
+    DDRB |= (1 << PB4);
+    
+    // Set SS(PB2), MOSI(PB3), and SCK(PB5) as Inputs
+    DDRB &= ~((1 << PB2) | (1 << PB3) | (1 << PB5));
+
+    // SPE: Enable SPI (MSTR is 0 by default for Slave Mode)
+    SPCR = (1 << SPE);
+    
+    // Preload first dummy byte (60) into data register
+    SPDR = 0x3C; 
+}
+
+void setup() {
+    Serial.begin(9600); // Initialize Serial Monitor
+    SPI_SlaveInit();    // Initialize SPI Slave
+}
+
+void loop() {
+    // Check if 1 byte transmission is complete (SPIF flag is set)
+    if (SPSR & (1 << SPIF)) {
+        uint8_t received = SPDR; // Read received byte (clears SPIF)
+        
+        Serial.print("Gelen: ");
+        Serial.println(received); // Print data to Serial Monitor
+
+        // Reload data register with dummy byte for the next cycle
+        SPDR = 0x3C; 
+    }
+}
