@@ -1,0 +1,44 @@
+#include <avr/io.h>
+#include <util/delay.h>
+
+uint8_t dataSequence[3] = {85, 170, 255}; // Array of values to send
+uint8_t indexTx = 0;                      // Current array index
+
+void SPI_MasterInit() {
+    // Set SS(PB2), MOSI(PB3), and SCK(PB5) as Outputs
+    DDRB |= (1 << PB2) | (1 << PB3) | (1 << PB5);
+    
+    // Set MISO(PB4) as Input
+    DDRB &= ~(1 << PB4);
+    
+    // Set SS HIGH to disable Slave initially
+    PORTB |= (1 << PB2);
+
+    // SPE: Enable SPI, MSTR: Master Mode, SPR1 & SPR0: Set clock to F_osc/128
+    SPCR = (1 << SPE) | (1 << MSTR) | (1 << SPR1) | (1 << SPR0);
+}
+
+void SPI_MasterTransmit(uint8_t data) {
+    PORTB &= ~(1 << PB2); // Set SS LOW to select Slave
+    _delay_us(5);         // Sync delay for signal stabilization
+
+    SPDR = data;          // Load data into register (starts transmission)
+    
+    while (!(SPSR & (1 << SPIF))); // Polling: Wait until transmission is done
+
+    _delay_us(5);         // Give Slave time to process data
+    PORTB |= (1 << PB2);  // Set SS HIGH to deselect Slave
+}
+
+void setup() {
+    SPI_MasterInit(); // Initialize SPI Master
+}
+
+void loop() {
+    SPI_MasterTransmit(dataSequence[indexTx]); // Transmit current value
+    
+    indexTx++; // Move to next value
+    if (indexTx >= 3) indexTx = 0; // Reset index after 3rd value
+
+    _delay_ms(500); // 0.5s delay between transmissions
+}
