@@ -1,0 +1,54 @@
+#define F_CPU 16000000UL
+#include <avr/io.h>
+
+#define SLAVE_ADDR 0x08                  // This Slave's I2C address
+
+volatile uint8_t state = 0x00;           // Holds button state to send later
+
+void setup() {
+  TWAR = (SLAVE_ADDR << 1);              // Set Slave Address (shift for TWGCE bit)
+  TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Enable TWI, Enable ACK, Clear Flag
+
+  PORTC |= (1 << PC4) | (1 << PC5);      // Enable Pull-ups on SDA and SCL lines
+
+  DDRB |= (1 << PB5);                    // Set PB5 (Pin 13 LED) as Output
+  DDRD &= ~(1 << PD2);                   // Set PD2 (Button) as Input
+  PORTD |= (1 << PD2);                   // Enable internal Pull-up on PD2
+}
+
+void loop() {
+      // If local button is pressed (LOW)
+      if (!(PIND & (1 << PD2))) { 
+          state = 0x02;                  // Set state to 2 to send to Master
+      }
+
+      // Check if TWI hardware flag is set (action required)
+      if (TWCR & (1 << TWINT)) {
+          uint8_t status = TWSR & 0b11111000; // Mask status bits
+
+          // Status 0x60: Master addressed Slave for Writing
+          if (status == 0x60) { 
+              TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Ready to receive byte
+          } 
+          // Status 0x80: Data byte received from Master
+          else if (status == 0x80) { 
+              uint8_t received = TWDR;   // Read the received byte from Master
+              if (received == 0x01) {    // If Master sent 1
+                  PORTB |= (1 << PB5);   // Turn ON local Slave LED
+              } else {
+                  PORTB &= ~(1 << PB5);  // Turn OFF local Slave LED
+              }
+              TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Clear flag for next byte
+          } 
+          // Status 0xA8: Master addressed Slave for Reading
+          else if (status == 0xA8) { 
+              TWDR = state;              // Load current state into data register
+              TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Send data byte to Master
+              state = 0x00;              // Reset local state after sending
+          } 
+          // Any other unexpected status condition
+          else { 
+              TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Clear flag, keep listening
+          }
+      }
+}
