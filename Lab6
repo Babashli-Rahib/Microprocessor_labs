@@ -1,0 +1,96 @@
+#include <avr/io.h>
+#include <avr/interrupt.h>
+
+volatile uint8_t count = 0;       // Current number (0-9)
+volatile uint8_t is_running = 1;  // 1 = running, 0 = paused
+
+// 7-Segment patterns for numbers 0 to 9 
+// g,f,e,d,c,b,a
+const uint8_t segments[10] = {
+    0b00111111, // 0
+    0b00000110, // 1
+    0b01011011, // 2
+    0b01001111, // 3
+    0b01100110, // 4
+    0b01101101, // 5
+    0b01111101, // 6
+    0b00000111, // 7
+    0b01111111, // 8
+    0b01101111  // 9
+};
+
+// Send number bits to Port D and Port B
+static inline void displayDigit(uint8_t digit) {
+    uint8_t val = segments[digit];
+
+    // Pins PD3..PD7 = bits 0..4 (a..e)
+    PORTD = (PORTD & 0x07) | ((val & 0x1F) << 3);
+
+    // Pins PB0..PB1 = bits 5..6 (f..g)
+    PORTB = (PORTB & 0xFC) | ((val >> 5) & 0x03);
+}
+
+// Start timer (turn clock ON)
+static inline void timer1_start(void) {
+    TCCR1B = (1 << WGM12) | (1 << CS12);
+}
+
+// Stop timer (turn clock OFF)
+static inline void timer1_stop(void) {
+    TCCR1B = (1 << WGM12);
+}
+
+void setup() {
+    cli(); // Disable interrupts
+
+    // Pin setups
+    DDRD |= 0xF8;        // PD3-PD7 = Outputs
+    DDRD &= ~(1 << PD2); // PD2 = Input (Button)
+    PORTD |= (1 << PD2); // Enable Button Pull-up
+    DDRB |= 0x03;        // PB0-PB1 = Outputs
+
+    // Clear display pins
+    PORTD &= 0x07;
+    PORTB &= 0xFC;
+
+    // Timer1 setup (0.5 seconds)
+    TCCR1A = 0;
+    TCCR1B = 0;
+    TCNT1  = 0;
+    OCR1A  = 31249;          // 0.5s match value
+    TIMSK1 |= (1 << OCIE1A); // Enable Timer interrupt
+
+    // Button interrupt setup (INT0)
+    EICRA |= (1 << ISC01);  // Trigger on button press
+    EICRA &= ~(1 << ISC00); 
+    EIFR  |= (1 << INTF0);  // Clear old flags
+    EIMSK |= (1 << INT0);   // Enable Button interrupt
+
+    displayDigit(count);    // Show 0 immediately
+    timer1_start();         // Start timer
+    sei();                  // Enable interrupts
+}
+
+// Timer Interrupt: Runs every 0.5 seconds
+ISR(TIMER1_COMPA_vect) {
+    count++;
+    if (count > 9) {
+        count = 0; // Reset after 9
+    }
+    displayDigit(count); // Update screen
+}
+
+// Button Interrupt: Runs when button is pressed
+ISR(INT0_vect) {
+    is_running ^= 1; // Toggle state (0 or 1)
+
+    if (is_running) {
+        timer1_start(); // Resume
+    } else {
+        timer1_stop();  // Pause
+    }
+}
+
+void loop() {
+    // Empty (everything is done by interrupts)
+}
