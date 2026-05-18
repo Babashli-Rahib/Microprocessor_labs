@@ -1,0 +1,75 @@
+#define F_CPU 16000000UL 
+#define SLAVE_ADDR 0x08                  // Target Slave I2C address
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <stdbool.h>
+
+void TWI_start() {
+    TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN); // Send START condition
+    while (!(TWCR & (1 << TWINT)));      // Wait for START to be sent
+}
+
+void TWI_stop() {
+    TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN); // Send STOP condition
+}
+
+void TWI_write(uint8_t data) {
+    TWDR = data;                         // Load data into register
+    TWCR = (1 << TWINT) | (1 << TWEN);   // Start transmission
+    while (!(TWCR & (1 << TWINT)));      // Wait for data to be sent
+}
+
+uint8_t TWI_read_nack() {
+    TWCR = (1 << TWINT) | (1 << TWEN);   // Read byte and respond with NACK
+    while (!(TWCR & (1 << TWINT)));      // Wait for reception complete
+    return TWDR;                         // Return received data
+}
+
+void send_to_slave(uint8_t data) {
+    TWI_start();                         // Open communication
+    TWI_write((SLAVE_ADDR << 1) | 0);    // Send Slave Address + Write bit (0)
+    TWI_write(data);                     // Send the data byte
+    TWI_stop();                          // Close communication
+}
+
+uint8_t request_from_slave() {
+    uint8_t data;
+    TWI_start();                         // Open communication
+    TWI_write((SLAVE_ADDR << 1) | 1);    // Send Slave Address + Read bit (1)
+    data = TWI_read_nack();              // Read 1 byte from Slave
+    TWI_stop();                          // Close communication
+    return data;
+}
+
+void setup() {
+    TWSR = 0x00;                         // Set Prescaler to 1
+    TWBR = 72;                           // Set bit rate clock speed (100kHz)
+    TWCR = (1 << TWEN);                  // Enable the TWI/I2C module
+
+    PORTC |= (1 << PC4) | (1 << PC5);    // Enable Pull-ups on SDA (PC4) and SCL (PC5)
+
+    DDRB |= (1 << PB5);                  // Set PB5 (Pin 13 LED) as Output
+    DDRD &= ~(1 << PD2);                 // Set PD2 (Button) as Input
+    PORTD |= (1 << PD2);                 // Enable internal Pull-up on PD2
+}
+
+void loop() {
+    // If button is pressed (LOW)
+    if (!(PIND & (1 << PD2))) {
+        send_to_slave(0x01);             // Send 1 to turn ON slave LED
+    } else {
+        send_to_slave(0x00);             // Send 0 to turn OFF slave LED
+    }
+
+    uint8_t received = request_from_slave(); // Request status byte from Slave
+
+    // If slave sent value 2
+    if (received == 0x02) {
+        PORTB |= (1 << PB5);             // Turn ON local Master LED
+    } else { 
+        PORTB &= ~(1 << PB5);            // Turn OFF local Master LED
+    }
+
+    _delay_ms(10);                       // Short delay loop stabilization
+}
